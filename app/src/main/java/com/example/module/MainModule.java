@@ -1,63 +1,57 @@
 package com.example.module;
 
 import android.annotation.SuppressLint;
-
 import androidx.annotation.NonNull;
-
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
-import io.github.libxposed.api.annotations.BeforeInvocation;
-import io.github.libxposed.api.annotations.XposedHooker;
 
-/**
- * 这是 Xposed 模块的入口类。
- * 客户化建议：
- * 1. 修改包名 `com.example.module` 为你自己的包名。
- * 2. 在 `onSystemServerLoaded` 或 `onPackageLoaded` 中添加你的 Hook 逻辑。
- */
 @SuppressLint({"PrivateApi", "BlockedPrivateApi"})
 public class MainModule extends XposedModule {
 
-    public MainModule(XposedInterface base, ModuleLoadedParam param) {
-        super(base, param);
-    }
-
     @Override
-    public void onSystemServerLoaded(@NonNull SystemServerLoadedParam param) {
-        super.onSystemServerLoaded(param);
-        // 在这里添加针对 System Server 的 Hook 逻辑
-        // 例如:
-        // try {
-        //     var classLoader = param.getClassLoader();
-        //     var clazz = classLoader.loadClass("com.android.server.wm.WindowManagerService");
-        //     // hook(method, MyHooker.class);
-        // } catch (Throwable t) {
-        //     log("Hook failed", t);
-        // }
+    public void onSystemServerStarting(@NonNull SystemServerStartingParam param) {
+        // 系统服务启动时调用，本项目不需要，留空
     }
 
     @Override
     public void onPackageLoaded(@NonNull PackageLoadedParam param) {
-        super.onPackageLoaded(param);
-        // 在这里添加针对特定应用的 Hook 逻辑
-        // if (param.getPackageName().equals("com.target.package")) {
-        //     // ...
-        // }
+        // 此回调中 classloader 尚不可用，不能在此 Hook 具体类
+    }
+
+    @Override
+    public void onPackageReady(@NonNull PackageReadyParam param) {
+        // 类加载器已就绪，可以在此加载并 Hook 目标类
+        if (!param.getPackageName().equals("com.sankuai.meituan.dispatch.crowdsource")) {
+            return;
+        }
+
+        try {
+            var classLoader = param.getClassLoader();
+            // 加载目标类
+            var clazz = classLoader.loadClass("com.meituan.banma.lightning.utils.d");
+            // 获取方法 b(boolean)，返回 void
+            var method = clazz.getDeclaredMethod("b", boolean.class);
+            // 注册 Hook
+            hook(method).intercept(new HelmetHooker());
+        } catch (Throwable t) {
+            log(android.util.Log.ERROR, "MainModule", "Hook failed", t);
+        }
     }
 
     /**
-     * 这是一个简单的 Hooker 示例。
+     * 拦截器：强制将 d.b(boolean) 的参数改为 true（未签署）
      */
-    @XposedHooker
-    private static class ExampleHooker implements Hooker {
-        @BeforeInvocation
-        public static void before(@NonNull BeforeHookCallback callback) {
-            // 在方法执行前执行的逻辑
+    private static class HelmetHooker implements XposedInterface.Hooker {
+        @Override
+        public Object intercept(@NonNull XposedInterface.Chain chain) throws Throwable {
+            // 获取原始参数
+            Object[] args = chain.getArgs().toArray();
+            if (args.length > 0 && args[0] instanceof Boolean) {
+                // 强制改为 true（未签署）
+                args[0] = true;
+            }
+            // 调用原方法（使用修改后的参数）
+            return chain.proceed(args);
         }
-
-        // @AfterInvocation
-        // public static void after(@NonNull AfterHookCallback callback) {
-        //     // 在方法执行后执行的逻辑
-        // }
     }
 }
